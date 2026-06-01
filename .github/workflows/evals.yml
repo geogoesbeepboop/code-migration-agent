@@ -1,0 +1,71 @@
+name: Eval Scorecard (PR fast subset)
+
+# Runs on every PR that touches agent prompts or migration logic.
+# Fast subset: only repos with ci_fast=true in the manifest.
+# Full corpus: see evals-nightly.yml
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - "src/migration/**"
+      - "src/agent_core/models.py"
+      - "evals/**"
+      - "pyproject.toml"
+
+permissions:
+  pull-requests: write   # needed to post the scorecard comment
+  contents: read
+
+jobs:
+  eval:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+
+    env:
+      ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+      GITHUB_TOKEN:      ${{ secrets.GITHUB_TOKEN }}
+      HITL_LEVEL:        none
+      SANDBOX_BACKEND:   local          # Docker not available in GitHub Actions runners
+      MAX_FIX_ATTEMPTS:  2              # faster CI: fewer retries
+      TEST_TIMEOUT_SECONDS: 120
+      AGENT_CORE_MAX_USD_PER_TASK: "3.00"
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install uv
+        run: pip install uv
+
+      - name: Install dependencies
+        run: uv sync
+
+      - name: Set up Java (for Gradle test commands)
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "21"
+
+      - name: Run eval (fast CI subset)
+        run: |
+          uv run python -m evals.runner \
+            --corpus evals/corpus/manifest.toml \
+            --profile java_to_kotlin \
+            --output evals/results/pr-${{ github.event.number }}.json \
+            --baseline evals/baselines/java_to_kotlin.json \
+            --ci \
+            --post-comment ${{ github.event.number }}
+        env:
+          EVAL_CI_FAST_ONLY: "true"   # runner reads this to filter ci_fast=true repos
+
+      - name: Upload scorecard artifact
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: scorecard-pr-${{ github.event.number }}
+          path: evals/results/
+          retention-days: 30

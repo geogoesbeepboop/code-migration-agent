@@ -1,0 +1,12 @@
+{
+  "_note": "Baseline stub. Replace with actual IntelliJ J2K output once measured.",
+  "_how_to_update": "Run: python -m evals.runner --corpus evals/corpus/manifest.toml --profile java_to_kotlin --save-baseline evals/baselines/java_to_kotlin.json",
+  "run_id": "baseline-stub",
+  "profile_name": "java_to_kotlin",
+  "tool": "stub",
+  "overall_success_rate": 0.0,
+  "overall_gave_up_rate": 0.0,
+  "avg_fix_attempts": 0.0,
+  "total_cost_usd": 0.0,
+  "repos": []
+}

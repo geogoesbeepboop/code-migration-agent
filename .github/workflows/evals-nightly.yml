@@ -1,0 +1,68 @@
+name: Eval Scorecard (Nightly full corpus)
+
+# Full corpus run nightly, plus on-demand.
+# Posts results to main branch and updates the baseline if success_rate improves.
+
+on:
+  schedule:
+    - cron: "0 3 * * *"   # 3am UTC daily
+  workflow_dispatch:
+    inputs:
+      save_baseline:
+        description: "Save result as new baseline (yes/no)"
+        default: "no"
+
+permissions:
+  pull-requests: write
+  contents: write
+
+jobs:
+  eval-nightly:
+    runs-on: ubuntu-latest
+    timeout-minutes: 180
+
+    env:
+      ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+      GITHUB_TOKEN:      ${{ secrets.GITHUB_TOKEN }}
+      HITL_LEVEL:        none
+      SANDBOX_BACKEND:   local
+      AGENT_CORE_MAX_USD_PER_TASK: "20.00"
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - run: pip install uv && uv sync
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "21"
+
+      - name: Run full corpus
+        run: |
+          uv run python -m evals.runner \
+            --corpus evals/corpus/manifest.toml \
+            --profile java_to_kotlin \
+            --output evals/results/nightly-$(date +%Y-%m-%d).json
+
+      - name: Save as baseline (if requested or if improvement)
+        if: github.event.inputs.save_baseline == 'yes'
+        run: |
+          cp evals/results/nightly-$(date +%Y-%m-%d).json \
+             evals/baselines/java_to_kotlin.json
+          git config user.email "ci@migration-agent"
+          git config user.name  "migration-agent CI"
+          git add evals/baselines/java_to_kotlin.json
+          git commit -m "chore: update eval baseline [nightly]" || true
+          git push
+
+      - name: Upload nightly artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: nightly-$(date +%Y-%m-%d)
+          path: evals/results/
+          retention-days: 90

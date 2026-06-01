@@ -1,0 +1,19 @@
+[test]
+# Command run inside the Sandbox after each file migration.
+# Must exit 0 on success, non-zero on failure.
+command = "./gradlew test --rerun-tasks --no-daemon"
+
+[source]
+glob       = "**/*.java"
+target_ext = ".kt"
+
+[sandbox]
+# Docker image for local dev (SANDBOX_BACKEND=docker).
+# Must have the correct JDK + build tool pre-installed.
+image = "gradle:8-jdk21"
+# E2B template for CI (SANDBOX_BACKEND=e2b).
+e2b_template = "base"
+
+[benchmark]
+# Used by evals/runner.py to compare against the baseline.
+baseline_tool = "intellij-j2k"

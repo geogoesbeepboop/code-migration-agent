@@ -1,0 +1,62 @@
+# Eval corpus — public Java repos with Gradle test suites.
+#
+# Selection criteria:
+#   - Pure Java (not already Kotlin)
+#   - Gradle build (`./gradlew test` works without external services)
+#   - ≥100 passing tests
+#   - Reasonable size (<500 Java files) for eval speed
+#   - Good mix of patterns (data classes, Spring, null-heavy, etc.)
+#
+# Before adding a repo, verify locally:
+#   git clone <url> /tmp/eval_test && cd /tmp/eval_test && ./gradlew test
+#
+# IMPORTANT (user action required):
+#   Run `./gradlew test` in each repo to confirm baseline tests pass BEFORE
+#   adding to this manifest. A repo with flaky tests will produce noisy evals.
+
+[[repos]]
+url         = "https://github.com/iluwatar/java-design-patterns"
+description = "Classic design patterns in Java; many small classes — good for R02/R03"
+tags        = ["data-classes", "patterns", "gradle"]
+# NOTE: uses Maven for some modules; eval script targets the Gradle subprojects
+
+[[repos]]
+url         = "https://github.com/TheAlgorithms/Java"
+description = "Algorithm implementations in Java; pure logic, no Spring, exercises R03/R04/R05"
+tags        = ["algorithms", "pure-java", "gradle"]
+
+[[repos]]
+url         = "https://github.com/google/gson"
+description = "Google JSON library; complex type handling, exercises R01 null-safety"
+tags        = ["library", "null-safety", "gradle"]
+
+[[repos]]
+url         = "https://github.com/square/okhttp"
+description = "HTTP client; builder pattern, interfaces, exercises R06/R07"
+tags        = ["builder", "interfaces", "gradle"]
+
+[[repos]]
+url         = "https://github.com/ReactiveX/RxJava"
+description = "Reactive extensions; exercises R08 (coroutines/async), complex generics"
+tags        = ["async", "complex", "gradle"]
+ci_skip     = true   # too large for fast CI; use in nightly runs only
+
+[[repos]]
+url         = "https://github.com/mockito/mockito"
+description = "Mocking framework; exercises R10 (checked exceptions) and R07 (static)"
+tags        = ["exceptions", "static", "gradle"]
+
+[[repos]]
+url         = "https://github.com/ben-manes/caffeine"
+description = "Caching library; exercises R01/R12 (null handling), R07 (static factories)"
+tags        = ["null-heavy", "static", "gradle"]
+
+[[repos]]
+url         = "https://github.com/tobshalle/simple-java-gradle-app"
+description = "Minimal Gradle+JUnit5 hello-world — used for fast smoke tests"
+tags        = ["smoke-test", "minimal", "gradle"]
+ci_fast     = true   # include in every PR CI run (fast)
+
+# ── CI subset ─────────────────────────────────────────────────────────────────
+# For PR CI, only run repos where ci_fast=true to keep the feedback loop tight.
+# Full corpus runs nightly (see .github/workflows/evals-nightly.yml).
