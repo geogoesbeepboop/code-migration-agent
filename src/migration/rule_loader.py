@@ -6,11 +6,15 @@ Each rule in rules.md has the form:
 
 The rule index maps pattern keywords (import paths, annotation names, type names)
 to the list of rule IDs that should fire when that pattern appears in a file.
+
+Keywords are loaded from a per-profile ``keywords.toml`` when present, falling
+back to the hardcoded maps below for backward compatibility.
 """
 
 from __future__ import annotations
 
 import re
+import tomllib
 from dataclasses import dataclass, field
 from pathlib import Path
 
@@ -97,12 +101,22 @@ _IMPORT_KEYWORDS: dict[str, list[str]] = {
 }
 
 
-def load_rule_index(rules_path: Path) -> RuleIndex:
-    """Parse rules.md and build a RuleIndex."""
+def load_rule_index(rules_path: Path, keywords_path: Path | None = None) -> RuleIndex:
+    """Parse rules.md and build a RuleIndex.
+
+    If ``keywords_path`` points to a valid ``keywords.toml``, its contents
+    override the hardcoded keyword maps. This allows each profile to declare its
+    own keyword patterns without touching rule_loader.py.
+    """
     text = rules_path.read_text()
     rules = _parse_rules_md(text)
-    # Augment with the hard-coded keyword maps above
-    _attach_keywords(rules)
+
+    if keywords_path and keywords_path.exists():
+        _attach_keywords_from_toml(rules, keywords_path)
+    else:
+        # Backward-compatible fallback
+        _attach_keywords(rules)
+
     return RuleIndex(rules=rules)
 
 
@@ -138,4 +152,30 @@ def _attach_keywords(rules: list[Rule]) -> None:
     for rule_id, kws in _IMPORT_KEYWORDS.items():
         rule = id_to_rule.get(rule_id)
         if rule:
+            rule.keywords.extend(kws)
+
+
+def _attach_keywords_from_toml(rules: list[Rule], keywords_path: Path) -> None:
+    """Load keywords from a profile's keywords.toml and attach to rules.
+
+    Expected format:
+        [source_keywords]
+        R01 = ["= null", "@nullable"]
+
+        [import_keywords]
+        R01 = ["javax.validation.constraints.notnull"]
+    """
+    with open(keywords_path, "rb") as f:
+        data = tomllib.load(f)
+
+    id_to_rule = {r.rule_id: r for r in rules}
+
+    for rule_id, kws in data.get("source_keywords", {}).items():
+        rule = id_to_rule.get(rule_id)
+        if rule and isinstance(kws, list):
+            rule.keywords.extend(kws)
+
+    for rule_id, kws in data.get("import_keywords", {}).items():
+        rule = id_to_rule.get(rule_id)
+        if rule and isinstance(kws, list):
             rule.keywords.extend(kws)

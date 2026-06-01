@@ -67,6 +67,7 @@ class MigrationState(TypedDict, total=False):
     # ── critic ────────────────────────────────────────────────────────────────
     critic_verdict: str     # "approve" | "revise" | "escalate"
     critic_notes: str
+    current_file_original_src: str   # original source before migration (for critic)
 
     # ── PR output ─────────────────────────────────────────────────────────────
     pr_url: str
@@ -75,6 +76,11 @@ class MigrationState(TypedDict, total=False):
     # ── sandbox (Phase 3) ─────────────────────────────────────────────────────
     sandbox_container_id: str   # Docker container ID — set by ingest, used by verify
     e2b_sandbox_id: str         # E2B sandbox ID — set by ingest for CI backend
+
+    # ── HITL feedback (injected by CLI on "n" at each gate) ──────────────────
+    user_plan_feedback: str       # gate 1 "n" feedback → plan node re-uses
+    user_fix_instructions: str    # gate 2 "n" feedback → worker node prepends
+    user_pr_feedback: str         # gate 3 "n" feedback → pr node re-uses
 
     # ── bookkeeping ───────────────────────────────────────────────────────────
     errors: list[str]

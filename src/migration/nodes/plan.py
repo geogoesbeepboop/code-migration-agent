@@ -46,6 +46,11 @@ def plan(state: MigrationState) -> MigrationState:
         dep_str = f"  deps:{deps}" if deps else ""
         lines.append(f"  {i:3}. {task['path']}  [{rules}]{dep_str}")
 
+    # Append user feedback from a previous gate 1 "n" response if present
+    user_feedback = state.get("user_plan_feedback", "").strip()
+    if user_feedback:
+        lines += ["", f"--- User feedback (incorporated) ---", user_feedback]
+
     plan_summary = "\n".join(lines)
     log.info("Plan ready: %d files, est. $%.4f", n, estimated_cost)
 
@@ -56,4 +61,5 @@ def plan(state: MigrationState) -> MigrationState:
         "current_file_index": 0,
         "fix_attempts": 0,
         "current_file_gave_up": False,
+        "user_plan_feedback": "",    # consumed; clear after incorporating
     }

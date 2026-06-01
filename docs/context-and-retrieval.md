@@ -64,17 +64,20 @@ retrieve the most *semantically similar* past success as a few-shot example.
 
 ## Decision
 
-| Layer | v1 (Phases 1–4) | Phase 5+ (only if justified) |
+| Layer | Phases 1–5 (current) | Phase 6+ (only if justified) |
 |---|---|---|
-| Rules | structured AST-keyed lookup | unchanged |
+| Rules | structured AST-keyed lookup (per-profile `keywords.toml`) | unchanged |
 | Repo context | tree-sitter dependency graph | + semantic code search *if* repos exceed context |
 | Cross-repo learning | — | pgvector library of accepted patch pairs (few-shot) |
 | Infra needed | tree-sitter only | pgvector + Supabase + an embedding model |
 
-**v1 ships with zero embeddings/pgvector/Supabase.** This is not a shortcut —
+**Phase 5 ships with zero embeddings/pgvector/Supabase.** This is not a shortcut —
 for bounded, structured, safety-critical transformation knowledge, deterministic
-retrieval is the *correct and more defensible* design. It's also a stronger
-interview answer than reflexively bolting on a vector DB.
+retrieval is the *correct and more defensible* design.
+
+Phase 5 added new profiles (Spring Boot 2→3, Maven variants) and a `scaffold-profile`
+command that uses the LLM to generate `rules.md` and `keywords.toml` from migration
+docs — but still no vector DB. Rules remain deterministic AST-keyed lookups.
 
 ## The reusable principle (say this on a panel)
 

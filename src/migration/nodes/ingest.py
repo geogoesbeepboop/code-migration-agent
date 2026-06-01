@@ -10,6 +10,7 @@ import uuid
 from pathlib import Path
 
 from agent_core.sandbox import get_sandbox, is_docker_available
+from agent_core.tracing import init_trace, log_span
 from migration.depgraph import build_dependency_graph, build_file_tasks
 from migration.profiles import load_profile
 from migration.rule_loader import load_rule_index
@@ -49,7 +50,7 @@ def ingest(state: MigrationState) -> MigrationState:
     # ── dep graph ─────────────────────────────────────────────────────────────
     log.info("Building dependency graph (profile=%s  glob=%s)", profile_name, profile.source_glob)
     dep_graph = build_dependency_graph(repo_path, profile.source_glob)
-    rule_index = load_rule_index(profile.rules_path)
+    rule_index = load_rule_index(profile.rules_path, profile.keywords_path)
     migration_order = build_file_tasks(dep_graph, rule_index, repo_path, profile.source_glob)
     log.info("Migration order: %d files", len(migration_order))
 
@@ -73,6 +74,14 @@ def ingest(state: MigrationState) -> MigrationState:
         log.info("E2BSandbox ready: %s", e2b_sandbox_id)
 
     run_id = state.get("run_id") or str(uuid.uuid4())
+
+    # Phase 5: initialise Langfuse trace (no-op if keys not configured)
+    trace = init_trace(
+        run_id=run_id,
+        name=f"{profile_name} migration",
+        metadata={"repo_url": repo_url, "profile": profile_name},
+    )
+    log_span(trace, "ingest", input_data={"repo_url": repo_url, "files": len(migration_order)})
 
     return {
         **state,

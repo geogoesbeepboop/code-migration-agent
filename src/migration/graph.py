@@ -6,11 +6,12 @@ Topology:
                                               ↑           ↓ pass → critic
                                               │           ↓ fix  → fix → verify
                                               │           ↓ give_up → mark_give_up → critic
-                                              │                            ↓ [HITL2 NodeInterrupt]
+                                              │                            ↓ [HITL2-immediate: NodeInterrupt]
                                          next_file ←──────────────────────┘
                                               │
                                               ├── more files → worker
-                                              └── all done  → [HITL3] pr → END
+                                              └── all done  → [HITL2-deferred] resolve_give_ups
+                                                                    ↓ [HITL3] pr → END
 
 Verify Phase 0: python -c "from migration.graph import build_graph; print('ok')"
 """
@@ -31,6 +32,7 @@ from .nodes import (
     plan,
     plan_review,
     pr,
+    resolve_give_ups,
     route_from_next_file,
     verify,
     worker,
@@ -44,16 +46,17 @@ def build_graph():
     g = StateGraph(MigrationState)
 
     for name, fn in [
-        ("ingest",       ingest),
-        ("plan",         plan),
-        ("plan_review",  plan_review),
-        ("worker",       worker),
-        ("verify",       verify),
-        ("fix",          fix),
-        ("mark_give_up", mark_give_up),
-        ("critic",       critic),
-        ("next_file",    next_file),
-        ("pr",           pr),
+        ("ingest",            ingest),
+        ("plan",              plan),
+        ("plan_review",       plan_review),
+        ("worker",            worker),
+        ("verify",            verify),
+        ("fix",               fix),
+        ("mark_give_up",      mark_give_up),
+        ("critic",            critic),
+        ("next_file",         next_file),
+        ("resolve_give_ups",  resolve_give_ups),
+        ("pr",                pr),
     ]:
         g.add_node(name, fn)
 
@@ -75,7 +78,8 @@ def build_graph():
         },
     )
     g.add_edge("fix",          "verify")
-    g.add_edge("mark_give_up", "critic")   # critic raises HITL gate 2 on give_up
+    g.add_edge("mark_give_up", "critic")   # critic: immediate mode raises HITL gate 2;
+                                            #         deferred mode logs and continues
 
     # ── critic → next_file ────────────────────────────────────────────────────
     g.add_edge("critic", "next_file")
@@ -85,11 +89,14 @@ def build_graph():
         "next_file",
         route_from_next_file,
         {
-            "worker": "worker",   # more files to migrate
-            "pr":     "pr",       # all files done → HITL gate 3 fires before pr
+            "worker":         "worker",           # more files to migrate
+            "resolve_give_ups": "resolve_give_ups",  # all files done → check give-ups
         },
     )
 
+    # resolve_give_ups → pr (HITL gate 2 deferred fires before resolve_give_ups;
+    # gate 3 fires before pr)
+    g.add_edge("resolve_give_ups", "pr")
     g.add_edge("pr", END)
 
     # ── compile with checkpointing + HITL gates ───────────────────────────────

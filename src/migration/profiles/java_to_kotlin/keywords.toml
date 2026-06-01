@@ -1,0 +1,31 @@
+# Keyword patterns for the java_to_kotlin profile.
+# Loaded by rule_loader.py to match rules against file content and imports.
+#
+# [source_keywords] — matched against the raw source text (case-insensitive)
+# [import_keywords] — matched against import statements
+
+[source_keywords]
+R01 = ["= null", "nullable", "@nullable"]
+R02 = ["@data", "@lombok.data", "getters", "setters", "hashcode", "tostring"]
+R03 = ["final ", "var ", "local variable"]
+R04 = ["string.format", "+ \"", "\" +"]
+R05 = ["switch (", "switch("]
+R06 = ["public static"]
+R07 = ["static ", "static final"]
+R08 = ["completablefuture", "executorservice", "@async"]
+R09 = ["@jvmfield", "@jvmstatic", "@jvmoverloads"]
+R10 = ["throws ", "checked exception"]
+R11 = ["collections.unmodifiablelist", "arrays.aslist", "new arraylist"]
+R12 = ["!= null", "== null", "if (null"]
+R13 = ["@autowired"]
+
+[import_keywords]
+R01 = ["javax.validation.constraints.notnull", "org.jetbrains.annotations.nullable"]
+R02 = ["lombok.data", "lombok.getter", "lombok.setter"]
+R08 = [
+  "java.util.concurrent.completablefuture",
+  "java.util.concurrent.executorservice",
+  "org.springframework.scheduling.annotation.async",
+]
+R11 = ["java.util.collections", "java.util.arrays", "java.util.arraylist"]
+R13 = ["org.springframework.beans.factory.annotation.autowired"]

@@ -26,12 +26,14 @@ log = logging.getLogger(__name__)
 class Tier(str, Enum):
     FAST = "fast"    # haiku  — cheap, quick
     MID  = "mid"     # sonnet — default worker
+    HIGH = "high"    # sonnet — alias for MID, for readability in non-migration contexts
     HARD = "hard"    # opus   — fix loop, critic
 
 
 _TIER_MODEL: dict[Tier, str] = {
     Tier.FAST: "claude-haiku-4-5-20251001",
     Tier.MID:  "claude-sonnet-4-6",
+    Tier.HIGH: "claude-sonnet-4-6",
     Tier.HARD: "claude-opus-4-8",
 }
 
@@ -39,6 +41,7 @@ _TIER_MODEL: dict[Tier, str] = {
 _TIER_PRICING: dict[Tier, tuple[float, float]] = {
     Tier.FAST: (0.80,  4.00),    # haiku
     Tier.MID:  (3.00,  15.00),   # sonnet
+    Tier.HIGH: (3.00,  15.00),   # sonnet (same as MID)
     Tier.HARD: (15.00, 75.00),   # opus
 }
 

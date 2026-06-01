@@ -1,0 +1,10 @@
+[test]
+command = "./gradlew test --rerun-tasks --no-daemon"
+
+[source]
+glob = "**/*.java"
+target_ext = ".java"
+
+[sandbox]
+image = "gradle:8-jdk21"
+e2b_template = "base"

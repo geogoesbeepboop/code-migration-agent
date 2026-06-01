@@ -68,13 +68,14 @@ def worker(state: MigrationState) -> MigrationState:
 
     log.info("[%d/%d] Migrating %s", idx + 1, len(migration_order), task["path"])
 
-    # Load file content
+    # Load file content (also stored as original for critic evaluation)
     abs_path = repo_path / task["path"]
     content = abs_path.read_text(errors="replace")
+    original_src = content
 
     # Load rule text for prompt
     profile = load_profile(profile_name)
-    rule_index = load_rule_index(profile.rules_path)
+    rule_index = load_rule_index(profile.rules_path, profile.keywords_path)
     rules_text = rule_index.rule_text(task.get("rules", []))
     if not rules_text.strip():
         rules_text = "(No specific rules triggered — apply general idiomatic Kotlin improvements.)"
@@ -82,12 +83,18 @@ def worker(state: MigrationState) -> MigrationState:
     # Build dep context from already-committed neighbours
     dep_context = _build_dep_context(task.get("deps", []), repo_path)
 
+    # Prepend any user fix instructions from a previous gate 2 "n" response
+    user_instructions = state.get("user_fix_instructions", "").strip()
+    user_instructions_section = (
+        f"\n## User instructions (override):\n{user_instructions}\n" if user_instructions else ""
+    )
+
     prompt = _PROMPT.format(
         path=task["path"],
         content=content[:12_000],  # cap to avoid overwhelming context
         rules_text=rules_text,
         dep_context=dep_context,
-    )
+    ) + user_instructions_section
 
     run_id = state.get("run_id", "default")
     budget = get_run_budget(run_id)
@@ -102,8 +109,10 @@ def worker(state: MigrationState) -> MigrationState:
         "patch": patch,
         "fix_attempts": 0,
         "current_file_gave_up": False,
+        "current_file_original_src": original_src,
         "current_file_cost_usd": cost,   # reset for this file
         "total_cost_usd": state.get("total_cost_usd", 0.0) + cost,
+        "user_fix_instructions": "",     # consumed; clear for next file
     }
 
 

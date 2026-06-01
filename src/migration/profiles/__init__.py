@@ -15,6 +15,7 @@ from pathlib import Path
 class Profile:
     name: str
     rules_path: Path
+    keywords_path: Path | None   # optional per-profile keywords.toml
     test_command: str
     source_glob: str        # e.g. "**/*.java"
     target_ext: str         # e.g. ".kt"
@@ -26,7 +27,12 @@ class Profile:
 
 
 def load_profile(name: str) -> Profile:
-    """Load a profile by name from src/migration/profiles/<name>/tests.toml."""
+    """Load a profile by name from src/migration/profiles/<name>/tests.toml.
+
+    Supports an optional ``inherits`` key in tests.toml — if set, rules_path
+    and keywords_path fall back to the inherited profile's files when the current
+    profile does not provide its own.
+    """
     profile_dir = Path(__file__).parent / name
     if not profile_dir.exists():
         available = _list_profiles()
@@ -35,9 +41,22 @@ def load_profile(name: str) -> Profile:
     with open(profile_dir / "tests.toml", "rb") as f:
         config = tomllib.load(f)
 
+    # Resolve rules_path — may be inherited
+    inherits = config.get("inherits", "")
+    rules_path = profile_dir / "rules.md"
+    keywords_path: Path | None = profile_dir / "keywords.toml" if (profile_dir / "keywords.toml").exists() else None
+
+    if not rules_path.exists() and inherits:
+        parent_dir = Path(__file__).parent / inherits
+        rules_path = parent_dir / "rules.md"
+        if keywords_path is None:
+            parent_kw = parent_dir / "keywords.toml"
+            keywords_path = parent_kw if parent_kw.exists() else None
+
     return Profile(
         name=name,
-        rules_path=profile_dir / "rules.md",
+        rules_path=rules_path,
+        keywords_path=keywords_path,
         test_command=config["test"]["command"],
         source_glob=config["source"]["glob"],
         target_ext=config["source"]["target_ext"],

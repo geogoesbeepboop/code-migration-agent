@@ -35,15 +35,16 @@ deterministic or conditional. Checkpointing happens at every node boundary.
 flowchart TD
     START([START]) --> ingest
 
-    ingest["ingest\n— clone repo into Sandbox\n— tree-sitter parse all files\n— build dep graph + rule index"]
-    plan["plan\n— format migration plan\n— estimate cost per file"]
+    ingest["ingest\n— clone repo into Sandbox\n— tree-sitter parse all files\n— build dep graph + rule index\n— init Langfuse trace"]
+    plan["plan\n— format migration plan\n— estimate cost per file\n— incorporate user_plan_feedback if present"]
     plan_review["plan_review\n— pass-through\n— HITL gate 1 interrupt point"]
-    worker["worker\n— load file rules + dep context\n— call LLM Tier.MID (Sonnet)\n— emit unified diff"]
+    worker["worker\n— load file rules + dep context\n— prepend user_fix_instructions if present\n— call LLM Tier.MID (Sonnet)\n— store original_src in state\n— emit unified diff"]
     verify["verify\n— git apply patch\n— run profile test command\n— parse pass/fail"]
     fix["fix\n— read failure text\n— call LLM Tier.HARD (Opus)\n— revise patch · fix_attempts++"]
-    critic["critic\n— LLM judge: idiomatic? minimal?\n— behavior-preserving?\n— HITL gate 2 if gave_up"]
+    critic["critic\n— receives original src + migrated src + diff\n— LLM judge: idiomatic? minimal? behavior-preserving?\n— immediate mode: HITL gate 2 NodeInterrupt on gave_up\n— deferred mode: log and continue"]
     next_file["next_file\n— git commit accepted patch\n— track gave_up files\n— advance current_file_index"]
-    pr["pr\n— push branch to GitHub\n— open PR with trace URL\n— HITL gate 3 interrupt point"]
+    resolve_give_ups["resolve_give_ups\n— grouped HITL gate 2 (deferred mode)\n— shows all failed files at once\n— no-op if no failures"]
+    pr["pr\n— LLM writes narrative PR description\n— push branch to GitHub\n— open PR with Langfuse trace URL\n— HITL gate 3 interrupt point"]
     END_NODE([END])
 
     ingest --> plan
@@ -56,19 +57,25 @@ flowchart TD
     fix --> verify
     critic --> next_file
     next_file -->|more files| worker
-    next_file -->|all done| pr
+    next_file -->|all done| resolve_give_ups
+    resolve_give_ups --> pr
     pr --> END_NODE
 
     style plan_review fill:#fef3c7,stroke:#d97706
     style critic fill:#fef3c7,stroke:#d97706
+    style resolve_give_ups fill:#fef3c7,stroke:#d97706
     style pr fill:#fef3c7,stroke:#d97706
     style mark_give_up fill:#fee2e2,stroke:#dc2626
 ```
 
 **Yellow nodes** = HITL interrupt points at `HITL_LEVEL=full`.
-**Red node** = `mark_give_up` sets `current_file_gave_up=True` before `critic` raises HITL gate 2.
-`plan_review` and `pr` use static `interrupt_before=[]`; `critic` raises
-`NodeInterrupt` dynamically when a file exhausts retries (gate 2).
+**Red node** = `mark_give_up` sets `current_file_gave_up=True` before `critic`.
+
+Gate 2 has two modes (controlled by `--hitl-gate2` / `HITL_GATE2` env var):
+- **`deferred`** (default): `critic` logs the failure and continues; `resolve_give_ups` groups all failures into a single interrupt before the PR gate
+- **`immediate`**: `critic` raises `NodeInterrupt` per file when retries are exhausted (original behaviour)
+
+The CLI stays alive through all gates with an inline y/n prompt loop — no `--resume` command needed. On "n" the user provides feedback and the relevant node reruns.
 
 ---
 
@@ -83,33 +90,47 @@ sequenceDiagram
 
     Agent->>Agent: ingest + build dep graph
     Agent->>Agent: plan (DAG + cost estimate)
-    Agent-->>Human: 🛑 GATE 1: approve plan?
-    Human-->>Agent: ✅ approved (or ❌ abort)
+    Agent-->>Human: ⏸ GATE 1: approve plan?
+    Human-->>Agent: y (approved) or n + feedback → plan regenerated
 
     loop for each file in migration order
-        Agent->>Agent: worker (migrate file)
-        Agent->>Agent: verify (run tests)
+        Agent->>Agent: worker (migrate file, optionally with user instructions)
+        Agent->>Agent: verify (run tests in sandbox)
         alt tests pass
-            Agent->>Agent: (continue)
+            Agent->>Agent: critic (original src + migrated src + diff)
         else retry budget exhausted
-            Agent-->>Human: 🛑 GATE 2: skip / hand-fix / abort?
-            Human-->>Agent: decision
+            Agent->>Agent: mark_give_up — accumulate in gave_up_files
+            Note over Agent: deferred mode: continue silently
         end
     end
 
-    Agent->>Agent: critic (review full diff)
-    Agent-->>Human: 🛑 GATE 3: approve PR?
-    Human-->>Agent: ✅ approved
-    Agent->>Agent: open PR
+    Agent-->>Human: ⏸ GATE 2 (deferred): review all N failed files at once
+    Human-->>Agent: y (skip all) or n + instructions → agent retries each
+
+    Agent-->>Human: ⏸ GATE 3: approve PR?
+    Human-->>Agent: y → PR opened  |  n + feedback → PR description regenerated
+    Agent->>Agent: LLM writes narrative PR description
+    Agent->>Agent: push branch + open GitHub PR with Langfuse trace URL
 ```
 
 `HITL_LEVEL` env var controls which gates fire:
 
 | Level | Gates active |
 |---|---|
-| `full` | plan approval · give-up escalation · PR review |
+| `full` | plan approval · give-up review · PR review |
 | `plan_only` | plan approval only |
 | `none` | fully autonomous (CI / benchmarking) |
+
+`HITL_GATE2` env var (or `--hitl-gate2`) controls gate 2 timing:
+
+| Mode | Behaviour |
+|---|---|
+| `deferred` (default) | All give-up failures shown together in one gate before PR |
+| `immediate` | Each failure interrupts immediately after it occurs |
+
+**The CLI loop**: The agent process stays alive across all gates. At each gate
+an inline `[y/n]` prompt is shown. Typing `n` opens a feedback prompt; the agent
+injects the feedback into state and re-runs the appropriate node.
 
 ---
 
@@ -201,7 +222,8 @@ gantt
     Phase 3 — Sandbox + Safety    :done,   p3, after p2,  3d
     Phase 4 — Eval Scorecard + CI :done,   p4, after p3,  3d
     section Platform
-    Phase 5 — More Profiles       :        p5, after p4,  5d
+    Phase 5 — Profiles + UX hardening :done,  p5, after p4,  5d
+    Phase 6 — JUnit4→5, embeddings    :        p6, after p5,  5d
 ```
 
 ## Implementation Status
@@ -231,9 +253,17 @@ gantt
 | ADR eval methodology | `docs/adr/001-eval-methodology.md` | 4 | ✅ |
 | mark_give_up node | `nodes/verify.py` | 4 | ✅ |
 | FileEvalRecord in state | `state.py` | 4 | ✅ |
-| Langfuse tracing | — | 5 | ⬜ |
-| JUnit4→5 profile | `profiles/junit4_to_junit5/` | 5 | ⬜ |
-| Spring Boot 2→3 profile | `profiles/spring_2_to_3/` | 5 | ⬜ |
+| Inline HITL y/n loop | `cli.py` | 5 | ✅ |
+| Deferred (grouped) give-up gate | `nodes/resolve_give_ups.py`, `hitl.py` | 5 | ✅ |
+| Critic: original + migrated src context | `nodes/critic.py`, `nodes/worker.py` | 5 | ✅ |
+| LLM-generated PR description | `nodes/pr.py` | 5 | ✅ |
+| Profile scaffold CLI command | `cli.py`, `scaffold.py` | 5 | ✅ |
+| keywords.toml per-profile keyword config | `rule_loader.py`, `profiles/__init__.py` | 5 | ✅ |
+| Maven Java profile | `profiles/java_to_kotlin_maven/` | 5 | ✅ |
+| Spring Boot 2→3 profile (Gradle) | `profiles/spring_boot_2_to_3/` | 5 | ✅ |
+| Spring Boot 2→3 profile (Maven) | `profiles/spring_boot_2_to_3_maven/` | 5 | ✅ |
+| Langfuse tracing | `agent_core/tracing.py` | 5 | ✅ |
+| JUnit4→5 profile | `profiles/junit4_to_junit5/` | 6 | ⬜ |
 
 ---
 

@@ -1,0 +1,14 @@
+# Maven variant of the java_to_kotlin profile.
+# Inherits rules.md and keywords.toml from java_to_kotlin.
+inherits = "java_to_kotlin"
+
+[test]
+command = "mvn test -B -q"
+
+[source]
+glob = "**/*.java"
+target_ext = ".kt"
+
+[sandbox]
+image = "maven:3.9-eclipse-temurin-21"
+e2b_template = "base"

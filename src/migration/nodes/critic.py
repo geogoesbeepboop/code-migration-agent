@@ -11,17 +11,20 @@ import re
 from pathlib import Path
 
 from agent_core.models import Tier, complete_with_cost, get_run_budget
+from migration.hitl import HITLGate2Mode, get_gate2_mode
 from migration.state import MigrationState
 
 log = logging.getLogger(__name__)
 
 _SYSTEM = """\
-You are a senior code reviewer specialising in Java-to-Kotlin migrations.
-Evaluate the migration diff on exactly three axes:
+You are a senior code reviewer specialising in automated code migrations.
+Evaluate the migration on exactly three axes:
 
-1. Idiomatic — does it use Kotlin/target idioms correctly?
+1. Idiomatic — does it use the target language/framework idioms correctly?
 2. Minimal — does it change ONLY what the migration rules require?
 3. Behavior-preserving — does it maintain the original semantics?
+
+You are given the original source, the migrated source, and the unified diff.
 
 Respond with ONLY a JSON object on a single line:
 {"verdict": "approve"|"revise"|"escalate", "notes": "<one concise paragraph>"}
@@ -37,12 +40,22 @@ _PROMPT = """\
 ## Test result: {test_status}
 ## Fix attempts: {fix_attempts}
 
+## Original source:
+```
+{original_src}
+```
+
+## Migrated source:
+```
+{migrated_src}
+```
+
 ## Diff:
 ```diff
 {patch}
 ```
 
-Evaluate the diff. Output only the JSON verdict.
+Evaluate the migration. Output only the JSON verdict.
 """
 
 
@@ -59,14 +72,20 @@ def critic(state: MigrationState) -> MigrationState:
 
     # HITL gate 2: escalate files that exhausted retries
     if gave_up:
-        msg = (
-            f"HITL GATE 2 — Escalation required.\n\n"
-            f"File: {file_path}\n"
-            f"Fix attempts: {state.get('fix_attempts', 0)}\n"
-            f"Last failure:\n{state.get('test_result', {}).get('output', '')[:500]}\n\n"
-            "Options: resume to skip this file / edit manually then resume / stop the run."
-        )
-        raise NodeInterrupt(msg)
+        if get_gate2_mode() == HITLGate2Mode.IMMEDIATE:
+            msg = (
+                f"HITL GATE 2 — Escalation required.\n\n"
+                f"File: {file_path}\n"
+                f"Fix attempts: {state.get('fix_attempts', 0)}\n"
+                f"Last failure:\n{state.get('test_result', {}).get('output', '')[:500]}\n\n"
+                "Options:\n"
+                "  [y] Skip this file and continue\n"
+                "  [n] Provide instructions — agent will retry the file with your guidance"
+            )
+            raise NodeInterrupt(msg)
+        # deferred mode: let next_file accumulate the failure, resolve_give_ups handles it later
+        log.info("Gate 2 deferred for %s — will be grouped before PR gate", file_path)
+        return {**state, "critic_verdict": "escalate", "critic_notes": "gave_up — deferred to resolve_give_ups"}
 
     # Normal path: LLM review of the diff
     test_result = state.get("test_result", {})
@@ -83,12 +102,34 @@ def critic(state: MigrationState) -> MigrationState:
             "critic_notes": "No changes produced — file may already be idiomatic.",
         }
 
+    # Read original source stored by worker; fall back to empty string
+    original_src = state.get("current_file_original_src", "")
+
+    # Read migrated source from disk (post-patch state)
+    repo_path = Path(state.get("repo_path", ""))
+    migrated_src = ""
+    if repo_path and file_path != "unknown":
+        migrated_path = repo_path / file_path
+        # The migrated file may have a different extension (e.g. .kt)
+        if not migrated_path.exists():
+            target_ext = state.get("target_ext", "")
+            if target_ext:
+                stem = migrated_path.with_suffix(target_ext)
+                if stem.exists():
+                    migrated_path = stem
+        try:
+            migrated_src = migrated_path.read_text(errors="replace")
+        except OSError:
+            migrated_src = "(migrated file not readable)"
+
     prompt = _PROMPT.format(
         profile_name=profile_name,
         path=file_path,
         test_status=test_status,
         fix_attempts=fix_attempts,
-        patch=patch[:6000],  # cap for context
+        original_src=original_src[:3000],
+        migrated_src=migrated_src[:3000],
+        patch=patch[:4000],  # reduced cap since we now include full sources
     )
 
     run_id = state.get("run_id", "default")

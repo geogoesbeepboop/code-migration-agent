@@ -77,10 +77,10 @@ def next_file(state: MigrationState) -> MigrationState:
 
 
 def route_from_next_file(state: MigrationState) -> str:
-    """Route to worker (more files) or pr (all done)."""
+    """Route to worker (more files) or resolve_give_ups (all done)."""
     idx = state.get("current_file_index", 0)
     migration_order = state.get("migration_order", [])
-    return "worker" if idx < len(migration_order) else "pr"
+    return "worker" if idx < len(migration_order) else "resolve_give_ups"
 
 
 def _commit_file(repo_path: Path, file_path: str, profile_name: str) -> str:

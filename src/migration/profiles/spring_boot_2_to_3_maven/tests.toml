@@ -1,0 +1,14 @@
+# Maven variant of the spring_boot_2_to_3 profile.
+# Inherits rules.md and keywords.toml from spring_boot_2_to_3.
+inherits = "spring_boot_2_to_3"
+
+[test]
+command = "mvn test -B -q"
+
+[source]
+glob = "**/*.java"
+target_ext = ".java"
+
+[sandbox]
+image = "maven:3.9-eclipse-temurin-21"
+e2b_template = "base"
