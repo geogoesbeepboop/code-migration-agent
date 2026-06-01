@@ -173,20 +173,26 @@ How information moves through a single file migration:
 
 ```mermaid
 flowchart LR
-    repo[("Git Repo\n(Sandbox clone)")] --> ts[tree-sitter\nparser]
-    ts --> depgraph[Dependency\nGraph]
-    ts --> ruleidx[Rule Index\n(AST-keyed)]
-    depgraph --> order[Migration\nOrder]
+    repo[Git Repo<br/>(Sandbox clone)] --> ts[tree-sitter parser]
+
+    ts --> depgraph[Dependency Graph]
+    ts --> ruleidx[Rule Index<br/>(AST-keyed)]
+
+    depgraph --> order[Migration Order]
     ruleidx --> worker
     order --> worker
 
-    worker["worker node\n(LLM Tier.MID)"] --> patch[Unified\nDiff]
-    patch --> verify["verify node\n(Sandbox + test cmd)"]
-    verify -->|pass| critic["critic node\n(LLM judge)"]
-    verify -->|fail| fix["fix node\n(LLM Tier.HARD)"]
+    worker[worker node<br/>(LLM Tier MID)] --> patch[Unified Diff]
+
+    patch --> verify[verify node<br/>(Sandbox + test cmd)]
+
+    verify -->|pass| critic[critic node<br/>(LLM judge)]
+    verify -->|fail| fix[fix node<br/>(LLM Tier HARD)]
+
     fix --> verify
-    critic --> pr["pr node\n(GitHub API)"]
-    pr --> github[(GitHub PR\n+ Langfuse trace)]
+    critic --> pr[pr node<br/>(GitHub API)]
+
+    pr --> github[GitHub PR<br/>+ Langfuse trace]
 ```
 
 ---
